@@ -382,22 +382,39 @@
     "khm": {
       "augmented": null,
       "card_data": {
-        "bytes": 65111,
-        "sha256": "87d1ca9c910c789867c9f3e4d95d4f50937a9004fed39b91fd3bbf41d3790500",
+        "bytes": 64690,
+        "sha256": "3f47335de9a3bc4fb1576ae28d5f2308bbd7dff73e1246a7865122a6d47b92b2",
         "url": "https://www.draftomen.com/card-data/khm.json.gz"
       },
       "name": "Kaldheim",
-      "profiles": {}
+      "profiles": {
+        "premierdraft": {
+          "maturity": "early"
+        },
+        "quickdraft": {
+          "maturity": "early"
+        },
+        "traddraft": {
+          "maturity": "early"
+        }
+      }
     },
     "klr": {
       "augmented": null,
       "card_data": {
-        "bytes": 47169,
-        "sha256": "3cc3bc19831933462c07640020042bf100f5ebba0801d6b175100847dfb7384a",
+        "bytes": 47173,
+        "sha256": "e868223ce83294c1a285b4467fc881ec8678cbc680ec9f1e6eb81171157a0c53",
         "url": "https://www.draftomen.com/card-data/klr.json.gz"
       },
       "name": "Kaladesh Remastered",
-      "profiles": {}
+      "profiles": {
+        "premierdraft": {
+          "maturity": "early"
+        },
+        "traddraft": {
+          "maturity": "early"
+        }
+      }
     },
     "ktk": {
       "augmented": null,
