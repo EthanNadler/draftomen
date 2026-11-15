@@ -496,12 +496,19 @@
     "m20": {
       "augmented": null,
       "card_data": {
-        "bytes": 52850,
-        "sha256": "8363864f94ef779b349f363e4dec508b113e5f8eb645170c2a2386bdcfa284af",
+        "bytes": 52868,
+        "sha256": "8d41ef8e1cda285d81325ecbdb23cf80563cea218eaea09bd817f6db047df0bf",
         "url": "https://www.draftomen.com/card-data/m20.json.gz"
       },
       "name": "Core Set 2020",
-      "profiles": {}
+      "profiles": {
+        "premierdraft": {
+          "maturity": "early"
+        },
+        "quickdraft": {
+          "maturity": "early"
+        }
+      }
     },
     "m21": {
       "augmented": null,
@@ -511,7 +518,17 @@
         "url": "https://www.draftomen.com/card-data/m21.json.gz"
       },
       "name": "Core Set 2021",
-      "profiles": {}
+      "profiles": {
+        "premierdraft": {
+          "maturity": "early"
+        },
+        "quickdraft": {
+          "maturity": "early"
+        },
+        "traddraft": {
+          "maturity": "early"
+        }
+      }
     },
     "mh3": {
       "augmented": null,
