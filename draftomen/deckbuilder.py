@@ -602,6 +602,7 @@ def select_deck_spells(
         ratings_data=ratings_data,
         base_pair=resolved_pair,
         enabled=allow_splash,
+        set_profile=set_profile,
     )
     splash_color = splash_state.active_color
     splash_fixing_sources = (

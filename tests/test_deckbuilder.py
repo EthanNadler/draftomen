@@ -58,8 +58,10 @@ from draftomen.seventeen import (
 )
 from draftomen.set_profile import (
     CardPairSynergy,
+    CardRating,
     PairProfile,
     ProfileMaturity,
+    RateEstimate,
     SampleSummary,
     ScarcityTarget,
     SetProfile,
@@ -1499,6 +1501,94 @@ def test_two_symbol_splash_card_gets_four_sources(
     assert f"{fixing_count} drafted fixing + {mountains} basics = 4/4 sources" in (
         _format_splash_note(selection=selection)
     )
+
+
+def _profile_only_splash_inputs(
+    *,
+    maturity: ProfileMaturity = ProfileMaturity.EARLY,
+) -> tuple[CardDatabase, SetProfile]:
+    """Mirror the live app: card win rates come only from the set profile."""
+
+    base = _splash_card_database(fixing_count=0)
+    database = CardDatabase(
+        cards={
+            grp_id: replace(card, set_code="tst")
+            for grp_id, card in base.cards.items()
+        }
+    )
+    win_rates = {1: 0.55, 2: 0.55, 3: 0.54, 4: 0.54, 5: 0.70}
+    profile = SetProfile(
+        set_code="TST",
+        event_format="quickdraft",
+        profile_version="profile-only-splash-test",
+        generated_at=FIXTURE_NOW,
+        source=SourceMetadata(provider="test"),
+        maturity=maturity,
+        samples=SampleSummary(total=100, by_pair=(("WU", 100),)),
+        confidence=1.0,
+        pairs=(PairProfile(pair="WU"),),
+        card_ratings=tuple(
+            CardRating(
+                card_key=f"grp_id:{grp_id}",
+                gih_win_rate=RateEstimate(
+                    raw_value=value,
+                    value=value,
+                    samples=1_000,
+                    prior_value=0.55,
+                    source="test",
+                ),
+            )
+            for grp_id, value in win_rates.items()
+        ),
+    )
+    return database, profile
+
+
+def test_profile_only_ratings_activate_the_splash_color() -> None:
+    database, profile = _profile_only_splash_inputs()
+
+    state = infer_splash_state(
+        pool_grp_ids=(1, 2, 3, 4, 5),
+        card_database=database,
+        ratings_data=None,
+        base_pair="WU",
+        enabled=True,
+        set_profile=profile,
+    )
+
+    assert state.active_color == "R"
+    assert state.picked_card_count == 1
+
+
+def test_splash_color_stays_inactive_without_any_win_rate_source() -> None:
+    database, _ = _profile_only_splash_inputs()
+
+    state = infer_splash_state(
+        pool_grp_ids=(1, 2, 3, 4, 5),
+        card_database=database,
+        ratings_data=None,
+        base_pair="WU",
+        enabled=True,
+    )
+
+    assert state.active_color is None
+
+
+def test_profile_only_build_plays_the_splash_card_like_the_live_app() -> None:
+    database, profile = _profile_only_splash_inputs()
+
+    selection = select_deck_spells(
+        pool_grp_ids=(1, 2, 3, 4, 5),
+        card_database=database,
+        pair="WU",
+        ratings_data=None,
+        allow_splash=True,
+        config=_SPLASH_CONFIG,
+        set_profile=profile,
+    )
+
+    assert selection.splash_color == "R"
+    assert 5 in {card.card.grp_id for card in selection.spells}
 
 
 def test_fourth_eligible_splash_card_is_left_out() -> None:

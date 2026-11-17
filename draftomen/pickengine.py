@@ -1011,6 +1011,7 @@ class PickEngine:
                 else None
             ),
             enabled=self.splash_enabled,
+            set_profile=active_profile,
         )
         active_context = candidate_context
         if active_context is None and resolved_stage is not None:

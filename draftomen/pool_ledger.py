@@ -535,6 +535,7 @@ def _likely_projection(
         ratings_data=ratings_data,
         base_pair=pair,
         enabled=True,
+        set_profile=set_profile,
     )
     resolved = tuple(
         (
