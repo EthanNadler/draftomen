@@ -42,6 +42,14 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Patched default-cards file to write, ending in .gz.",
     )
+    parser.add_argument(
+        "--basic-lands",
+        action="store_true",
+        help=(
+            "Also give the set's Arena basic land prints ids, derived from the "
+            "collector-number offset that every set card with an id shares."
+        ),
+    )
     return parser
 
 
@@ -120,6 +128,49 @@ def patch_rows(
     return matched, already_set, unmatched
 
 
+def assign_basic_land_ids(*, rows: list[dict[str, Any]], set_code: str) -> int:
+    """Set arena_id on the set's Arena basic land prints from the shared offset.
+    Raises ValueError when the ids share no single offset or a derived id is taken.
+    """
+    wanted = set_code.casefold()
+    set_rows = [card for card in rows if str(card.get("set", "")).casefold() == wanted]
+    offsets = {
+        card["arena_id"] - int(card["collector_number"])
+        for card in set_rows
+        if isinstance(card.get("arena_id"), int)
+        and str(card.get("collector_number", "")).isdigit()
+    }
+    if len(offsets) != 1:
+        raise ValueError(
+            f"{set_code} Arena ids share {len(offsets)} collector-number offsets, "
+            "so basic land ids cannot be derived."
+        )
+    offset = offsets.pop()
+
+    basics = [
+        card
+        for card in set_rows
+        if str(card.get("type_line", "")).startswith("Basic Land")
+        and "arena" in card.get("games", [])
+        and card.get("arena_id") is None
+        and str(card.get("collector_number", "")).isdigit()
+    ]
+    if not basics:
+        raise ValueError(f"{set_code} has no Arena basic land print without an id.")
+
+    taken = {card["arena_id"] for card in rows if isinstance(card.get("arena_id"), int)}
+    for card in basics:
+        arena_id = offset + int(card["collector_number"])
+        if arena_id in taken:
+            raise ValueError(
+                f"Derived id {arena_id} for {card.get('name')} "
+                f"#{card['collector_number']} is already used."
+            )
+    for card in basics:
+        card["arena_id"] = offset + int(card["collector_number"])
+    return len(basics)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Patch the Scryfall data and print a short report.
     Returns a non-zero status when the ratings are invalid or nothing matched.
@@ -149,6 +200,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if matched + already_set == 0:
         print(f"No rating matched a {args.set_code} card.", file=sys.stderr)
         return 1
+
+    if args.basic_lands:
+        try:
+            basics = assign_basic_land_ids(rows=rows, set_code=args.set_code)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        print(f"Basic lands: {basics}")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(args.output, mode="wt", encoding="utf-8") as handle:

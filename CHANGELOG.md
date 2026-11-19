@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+- TRK basic lands no longer show as "Unknown card" in live drafts. The TRK
+  card data had no basic lands, because neither Scryfall nor 17Lands lists
+  their Arena ids. `scripts/patch_scryfall_arena_ids.py` has a new
+  `--basic-lands` option that derives them from the collector-number offset
+  every TRK card shares, and the TRK card data now holds the 20 Arena basics.
+  (#1075)
 - The deck builder can splash again in the app. The splash check read card
   win rates only from 17Lands data, which the app no longer loads, so no
   splash colour was ever set. It now uses the set profile's win rates when

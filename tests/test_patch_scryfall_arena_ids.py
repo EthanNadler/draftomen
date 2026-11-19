@@ -21,12 +21,22 @@ def _card(*, name: str, number: str, set_code: str = "fra", **extra: Any) -> dic
     }
 
 
+def _basic(*, name: str, number: str, games: list[str] | None = None) -> dict:
+    return _card(
+        name=name,
+        number=number,
+        type_line=f"Basic Land — {name}",
+        games=["paper", "arena"] if games is None else games,
+    )
+
+
 def _run(
     *,
     tmp_path: Path,
     cards: list[dict],
     ratings: Any,
     set_code: str = "FRA",
+    extra_args: list[str] | None = None,
 ) -> tuple[int, list[dict]]:
     bulk = tmp_path / "bulk.jsonl"
     bulk.write_text("".join(json.dumps(c) + "\n" for c in cards), encoding="utf-8")
@@ -42,6 +52,7 @@ def _run(
             str(bulk),
             "--output",
             str(output),
+            *(extra_args or []),
         ]
     )
     rows = (
@@ -173,3 +184,82 @@ def test_output_is_gzip_jsonl_readable_by_bulk_reader(tmp_path: Path) -> None:
     assert code == 0
     with gzip.open(tmp_path / "out.jsonl.gz", mode="rt", encoding="utf-8") as handle:
         assert json.loads(handle.readline())["arena_id"] == 111
+
+
+def test_basic_lands_get_ids_from_shared_offset(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cards = [
+        _card(name="Bolt", number="1"),
+        _card(name="Shock", number="2"),
+        _basic(name="Mountain", number="10"),
+        _basic(name="Forest", number="11"),
+        _basic(name="Island", number="12", games=["paper"]),
+    ]
+    code, rows = _run(
+        tmp_path=tmp_path,
+        cards=cards,
+        ratings=[{"name": "Bolt", "mtga_id": 501}, {"name": "Shock", "mtga_id": 502}],
+        extra_args=["--basic-lands"],
+    )
+
+    assert code == 0
+    assert rows[2]["arena_id"] == 510
+    assert rows[3]["arena_id"] == 511
+    assert "arena_id" not in rows[4]
+    assert "Basic lands: 2" in capsys.readouterr().out
+
+
+def test_basic_lands_are_left_alone_without_option(tmp_path: Path) -> None:
+    code, rows = _run(
+        tmp_path=tmp_path,
+        cards=[_card(name="Bolt", number="1"), _basic(name="Mountain", number="10")],
+        ratings=[{"name": "Bolt", "mtga_id": 501}],
+    )
+
+    assert code == 0
+    assert "arena_id" not in rows[1]
+
+
+def test_basic_lands_fail_when_offsets_differ(tmp_path: Path) -> None:
+    code, rows = _run(
+        tmp_path=tmp_path,
+        cards=[
+            _card(name="Bolt", number="1"),
+            _card(name="Shock", number="2"),
+            _basic(name="Mountain", number="10"),
+        ],
+        ratings=[{"name": "Bolt", "mtga_id": 501}, {"name": "Shock", "mtga_id": 700}],
+        extra_args=["--basic-lands"],
+    )
+
+    assert code != 0
+    assert rows == []
+
+
+def test_basic_lands_fail_when_derived_id_is_taken(tmp_path: Path) -> None:
+    code, rows = _run(
+        tmp_path=tmp_path,
+        cards=[
+            _card(name="Bolt", number="1"),
+            _basic(name="Mountain", number="10"),
+            _card(name="Elsewhere", number="1", set_code="xyz", arena_id=510),
+        ],
+        ratings=[{"name": "Bolt", "mtga_id": 501}],
+        extra_args=["--basic-lands"],
+    )
+
+    assert code != 0
+    assert rows == []
+
+
+def test_basic_lands_fail_when_set_has_none(tmp_path: Path) -> None:
+    code, rows = _run(
+        tmp_path=tmp_path,
+        cards=[_card(name="Bolt", number="1")],
+        ratings=[{"name": "Bolt", "mtga_id": 501}],
+        extra_args=["--basic-lands"],
+    )
+
+    assert code != 0
+    assert rows == []

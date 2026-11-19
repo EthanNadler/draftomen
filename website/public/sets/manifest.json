@@ -806,8 +806,8 @@
     "trk": {
       "augmented": null,
       "card_data": {
-        "bytes": 63248,
-        "sha256": "8d467894a42c5e90e229fe3312f623384dacc6b551f696c93301a9368c30a6c0",
+        "bytes": 64690,
+        "sha256": "a4a6ede1cf311cb82caec9d7dc1b6cedfd509fe5d4c2be0db21c19fdd92db8dc",
         "url": "https://www.draftomen.com/card-data/trk.json.gz"
       },
       "name": "Star Trek",
