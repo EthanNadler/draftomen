@@ -49,6 +49,36 @@ def profile_card_key(card: CardInfo) -> str:
     return key.casefold()
 
 
+def empirical_card_ratings(
+    *,
+    profile: SetProfile | None,
+    cards: Iterable[CardInfo],
+) -> dict[int, CardRating]:
+    """Match cards to the ratings of an early or mature profile by grp id.
+    Cards from other sets, unknown cards and unrated cards are left out.
+    """
+
+    if profile is None or profile.maturity not in {
+        ProfileMaturity.EARLY,
+        ProfileMaturity.MATURE,
+    }:
+        return {}
+
+    ratings_by_key = {rating.card_key: rating for rating in profile.card_ratings}
+    matched: dict[int, CardRating] = {}
+    for card in cards:
+        if (
+            card.unknown
+            or card.set_code is None
+            or card.set_code.casefold() != profile.set_code
+        ):
+            continue
+        rating = ratings_by_key.get(profile_card_key(card))
+        if rating is not None:
+            matched[card.grp_id] = rating
+    return matched
+
+
 class SetProfileError(ValueError):
     """Base error raised for invalid set-profile data or loading failures."""
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from draftomen.carddb import CardDatabase, CardInfo
 from draftomen.config import DECK_BUILDER, SPLASH, SplashConfig
+from draftomen.set_profile import SetProfile, empirical_card_ratings
 from draftomen.seventeen import SeventeenLandsData
 
 COLOR_ORDER = ("W", "U", "B", "R", "G")
@@ -65,6 +66,7 @@ def infer_splash_state(
     base_pair: str | None,
     enabled: bool,
     config: SplashConfig = SPLASH,
+    set_profile: SetProfile | None = None,
 ) -> SplashState:
     """Infer the active splash color and deterministic fixing from the pool.
     A third-color card that beats the weakest likely maindeck spell sets the plan.
@@ -89,11 +91,17 @@ def infer_splash_state(
         color: [] for color in COLOR_ORDER if color not in base_pair
     }
     required_by_color: dict[str, int] = {}
+    profile_win_rates = _profile_win_rates(
+        pool_grp_ids=pool_grp_ids,
+        card_database=card_database,
+        set_profile=set_profile,
+    )
     replaced_win_rate = _replaced_spell_win_rate(
         pool_grp_ids=pool_grp_ids,
         card_database=card_database,
         ratings_data=ratings_data,
         base_pair=base_pair,
+        profile_win_rates=profile_win_rates,
     )
     for index, grp_id in enumerate(pool_grp_ids):
         card = card_database.lookup(grp_id=grp_id)
@@ -101,7 +109,11 @@ def infer_splash_state(
         if splash_color is None or off_color_pips > config.maximum_off_color_pips:
             continue
 
-        win_rate = _global_win_rate(ratings_data=ratings_data, grp_id=grp_id)
+        win_rate = _global_win_rate(
+            ratings_data=ratings_data,
+            grp_id=grp_id,
+            profile_win_rates=profile_win_rates,
+        )
         if win_rate is None:
             continue
 
@@ -530,6 +542,7 @@ def _replaced_spell_win_rate(
     card_database: CardDatabase,
     ratings_data: SeventeenLandsData | None,
     base_pair: str,
+    profile_win_rates: dict[int, float],
 ) -> float | None:
     win_rates = sorted(
         (
@@ -543,6 +556,7 @@ def _replaced_spell_win_rate(
                 win_rate := _global_win_rate(
                     ratings_data=ratings_data,
                     grp_id=grp_id,
+                    profile_win_rates=profile_win_rates,
                 )
             )
             is not None
@@ -613,8 +627,33 @@ def _global_win_rate(
     *,
     ratings_data: SeventeenLandsData | None,
     grp_id: int,
+    profile_win_rates: dict[int, float] | None = None,
 ) -> float | None:
-    if ratings_data is None:
+    if ratings_data is not None:
+        return ratings_data.rating_for(grp_id=grp_id).gih_win_rate
+
+    if profile_win_rates is None:
         return None
 
-    return ratings_data.rating_for(grp_id=grp_id).gih_win_rate
+    return profile_win_rates.get(grp_id)
+
+
+def _profile_win_rates(
+    *,
+    pool_grp_ids: tuple[int, ...],
+    card_database: CardDatabase,
+    set_profile: SetProfile | None,
+) -> dict[int, float]:
+    """Map pool cards to set-profile GIH win rates, used without 17Lands data.
+    A rating with no games in hand holds only the prior, so it is left out.
+    """
+
+    ratings = empirical_card_ratings(
+        profile=set_profile,
+        cards=(card_database.lookup(grp_id=grp_id) for grp_id in set(pool_grp_ids)),
+    )
+    return {
+        grp_id: rating.gih_win_rate.value
+        for grp_id, rating in ratings.items()
+        if rating.gih_win_rate.samples > 0
+    }

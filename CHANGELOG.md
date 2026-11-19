@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+- The deck builder can splash again in the app. The splash check read card
+  win rates only from 17Lands data, which the app no longer loads, so no
+  splash colour was ever set. It now uses the set profile's win rates when
+  17Lands data is missing, and ignores profile ratings with no games in hand.
 - Add Star Trek (TRK) card data and early Premier, Traditional and Pick-Two
   profiles. Scryfall has no Arena ids for TRK yet, so this one-time export
   takes the 336 Arena ids from 17Lands ratings, as was done for FRA.
