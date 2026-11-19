@@ -92,6 +92,11 @@ Card data keys on Arena ids. When Scryfall has none for a new set,
    The script adds `arena_id` to the lowest collector number print of each
    rated card and leaves existing Scryfall ids alone. Add `--bulk-file PATH` to
    use a local default-cards copy instead of downloading one.
+   Ratings never list basic lands. If `cards.csv` from 17Lands has no rows
+   for the set either, add `--basic-lands`: the script then gives the set's
+   Arena basic land prints ids from the collector-number offset that every
+   card with an id shares, and stops with an error when the ids follow more
+   than one offset or a derived id is already used.
 2. Run
    `draftomen-tui export-set-data SET --bulk-file patched.jsonl.gz --ratings-file RATINGS.json`.
    This adds the set's bonus-sheet cards from the same ratings file.
