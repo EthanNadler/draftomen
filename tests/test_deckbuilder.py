@@ -1506,6 +1506,7 @@ def test_two_symbol_splash_card_gets_four_sources(
 def _profile_only_splash_inputs(
     *,
     maturity: ProfileMaturity = ProfileMaturity.EARLY,
+    splash_samples: int = 1_000,
 ) -> tuple[CardDatabase, SetProfile]:
     """Mirror the live app: card win rates come only from the set profile."""
 
@@ -1531,9 +1532,11 @@ def _profile_only_splash_inputs(
             CardRating(
                 card_key=f"grp_id:{grp_id}",
                 gih_win_rate=RateEstimate(
-                    raw_value=value,
+                    raw_value=(
+                        None if grp_id == 5 and splash_samples == 0 else value
+                    ),
                     value=value,
-                    samples=1_000,
+                    samples=splash_samples if grp_id == 5 else 1_000,
                     prior_value=0.55,
                     source="test",
                 ),
@@ -1569,6 +1572,44 @@ def test_splash_color_stays_inactive_without_any_win_rate_source() -> None:
         ratings_data=None,
         base_pair="WU",
         enabled=True,
+    )
+
+    assert state.active_color is None
+
+
+def test_profile_rating_without_games_in_hand_does_not_activate_the_splash() -> None:
+    database, profile = _profile_only_splash_inputs(splash_samples=0)
+
+    state = infer_splash_state(
+        pool_grp_ids=(1, 2, 3, 4, 5),
+        card_database=database,
+        ratings_data=None,
+        base_pair="WU",
+        enabled=True,
+        set_profile=profile,
+    )
+
+    assert state.active_color is None
+
+
+def test_profile_does_not_fill_gaps_in_seventeen_lands_data() -> None:
+    database, profile = _profile_only_splash_inputs()
+    ratings_without_splash_card = _ratings_data_from_entries(
+        entries=(
+            (1, "White Playable", "W", 0.55),
+            (2, "Blue Playable", "U", 0.55),
+            (3, "Second White Playable", "W", 0.54),
+            (4, "Second Blue Playable", "U", 0.54),
+        )
+    )
+
+    state = infer_splash_state(
+        pool_grp_ids=(1, 2, 3, 4, 5),
+        card_database=database,
+        ratings_data=ratings_without_splash_card,
+        base_pair="WU",
+        enabled=True,
+        set_profile=profile,
     )
 
     assert state.active_color is None

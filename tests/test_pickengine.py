@@ -65,6 +65,7 @@ from draftomen.set_profile import (
     SetProfile,
     SourceMetadata,
     TriadProfile,
+    profile_card_key,
 )
 from draftomen.semantic_roles import (
     Role,
@@ -857,6 +858,30 @@ def test_splash_and_actual_pair_tiebreak_reasons_retain_provenance() -> None:
     )
     assert splash_reason.contribution is None
     assert splash_reason.evidence == splash_card.splash.reasons
+
+
+def test_profile_only_engine_infers_the_splash_color_like_the_live_app() -> None:
+    database = CardDatabase(
+        cards={
+            grp_id: replace(card, set_code="tst")
+            for grp_id, card in _splash_card_database().cards.items()
+        }
+    )
+    profile = _test_profile(
+        card_ratings=tuple(
+            _profile_card(profile_card_key(database.cards[grp_id]), value)
+            for grp_id, value in ((101, 0.55), (102, 0.55), (105, 0.70))
+        ),
+    )
+
+    scored = PickEngine(set_profile=profile).score_pack(
+        offered_grp_ids=(101,),
+        card_database=database,
+        pool_grp_ids=(101, 102, 101, 102, 103, 104, 105),
+        pick_index=10,
+    )
+
+    assert scored.splash_state.active_color == "R"
 
     tiebreak_pack = PickEngine(
         ratings_data=_msh_pair_tiebreaker_data(),

@@ -4,15 +4,10 @@
 
 ## [Unreleased]
 
-- The deck builder can splash again in the app. The splash colour is set by a
-  third-colour card whose win rate beats the pool's 23rd-best on-pair spell,
-  but that check read win rates only from 17Lands data, and the live app
-  passes none since ratings moved to set profiles. Every card was skipped, so
-  no splash colour was ever set: the app built strict two-colour decks while
-  the pick view still labelled cards "Splash", across several colours and
-  past the 3-card cap. The check now falls back to the set profile's win
-  rates, the same ones the cards are scored with, in the deck builder, the
-  pick engine and the pool ledger.
+- The deck builder can splash again in the app. The splash check read card
+  win rates only from 17Lands data, which the app no longer loads, so no
+  splash colour was ever set. It now uses the set profile's win rates when
+  17Lands data is missing, and ignores profile ratings with no games in hand.
 - Add Star Trek (TRK) card data and early Premier, Traditional and Pick-Two
   profiles. Scryfall has no Arena ids for TRK yet, so this one-time export
   takes the 336 Arena ids from 17Lands ratings, as was done for FRA.

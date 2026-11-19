@@ -42,7 +42,7 @@ from draftomen.set_profile import (
     CardRating,
     ProfileMaturity,
     SetProfile,
-    profile_card_key,
+    empirical_card_ratings,
 )
 from draftomen.seventeen import (
     FORMAT_RATING_SOURCE,
@@ -441,21 +441,16 @@ def _profile_rating_lookup(
         return _ProfileRatingLookup(ratings_by_grp_id={}, distribution=())
 
     assert profile is not None
-    profile_ratings = {rating.card_key: rating for rating in profile.card_ratings}
+    matched_ratings = empirical_card_ratings(
+        profile=profile,
+        cards=(card for _, card in sorted(card_database.cards.items())),
+    )
     runtime_ratings: dict[int, ResolvedCardRating] = {}
     distribution: list[float] = []
     matched_keys: set[str] = set()
-    for grp_id, card in sorted(card_database.cards.items()):
-        if (
-            card.unknown
-            or card.set_code is None
-            or card.set_code.casefold() != profile.set_code
-        ):
-            continue
-        card_key = profile_card_key(card)
-        card_rating = profile_ratings.get(card_key)
-        if card_rating is None:
-            continue
+    for grp_id, card_rating in matched_ratings.items():
+        card = card_database.cards[grp_id]
+        card_key = card_rating.card_key
         runtime_ratings[grp_id] = _resolved_profile_rating(
             card=card,
             profile=profile,

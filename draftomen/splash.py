@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from draftomen.carddb import CardDatabase, CardInfo
 from draftomen.config import DECK_BUILDER, SPLASH, SplashConfig
-from draftomen.set_profile import ProfileMaturity, SetProfile, profile_card_key
+from draftomen.set_profile import SetProfile, empirical_card_ratings
 from draftomen.seventeen import SeventeenLandsData
 
 COLOR_ORDER = ("W", "U", "B", "R", "G")
@@ -70,7 +70,6 @@ def infer_splash_state(
 ) -> SplashState:
     """Infer the active splash color and deterministic fixing from the pool.
     A third-color card that beats the weakest likely maindeck spell sets the plan.
-    Win rates come from 17Lands data, else from the empirical set profile.
     """
 
     fixing_sources = _fixing_counts(
@@ -631,9 +630,7 @@ def _global_win_rate(
     profile_win_rates: dict[int, float] | None = None,
 ) -> float | None:
     if ratings_data is not None:
-        win_rate = ratings_data.rating_for(grp_id=grp_id).gih_win_rate
-        if win_rate is not None:
-            return win_rate
+        return ratings_data.rating_for(grp_id=grp_id).gih_win_rate
 
     if profile_win_rates is None:
         return None
@@ -647,30 +644,16 @@ def _profile_win_rates(
     card_database: CardDatabase,
     set_profile: SetProfile | None,
 ) -> dict[int, float]:
-    """Map pool cards to the GIH win rates of an empirical set profile.
-    The live app scores cards from the profile and passes no 17Lands data.
+    """Map pool cards to set-profile GIH win rates, used without 17Lands data.
+    A rating with no games in hand holds only the prior, so it is left out.
     """
 
-    if set_profile is None or set_profile.maturity not in {
-        ProfileMaturity.EARLY,
-        ProfileMaturity.MATURE,
-    }:
-        return {}
-
-    ratings_by_key = {
-        rating.card_key: rating.gih_win_rate.value
-        for rating in set_profile.card_ratings
+    ratings = empirical_card_ratings(
+        profile=set_profile,
+        cards=(card_database.lookup(grp_id=grp_id) for grp_id in set(pool_grp_ids)),
+    )
+    return {
+        grp_id: rating.gih_win_rate.value
+        for grp_id, rating in ratings.items()
+        if rating.gih_win_rate.samples > 0
     }
-    win_rates: dict[int, float] = {}
-    for grp_id in set(pool_grp_ids):
-        card = card_database.lookup(grp_id=grp_id)
-        if (
-            card.unknown
-            or card.set_code is None
-            or card.set_code.casefold() != set_profile.set_code
-        ):
-            continue
-        win_rate = ratings_by_key.get(profile_card_key(card))
-        if win_rate is not None:
-            win_rates[grp_id] = win_rate
-    return win_rates
