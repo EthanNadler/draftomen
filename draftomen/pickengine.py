@@ -389,9 +389,34 @@ def _resolved_profile_rating(
 ) -> ResolvedCardRating:
     gih_rate = card_rating.gih_win_rate
     if gih_rate.samples == 0:
-        source_format = None
-        fallback_reason = None
-    elif profile.schema_version == 1:
+        # No games in hand, often because 17Lands withheld a thin rate. Use
+        # the neutral prior so no win rate is shown, but keep the ALSA.
+        return ResolvedCardRating(
+            grp_id=card.grp_id,
+            name=card.name,
+            color="".join(card.colors) or "C",
+            rarity=card.rarity,
+            average_last_seen_at=card_rating.average_last_seen_at,
+            gih_win_rate=None,
+            opening_hand_win_rate=None,
+            drawn_improvement_win_rate=None,
+            sample_counts=RatingSampleCounts(
+                seen=0,
+                picked=0,
+                games_played=0,
+                opening_hand=0,
+                games_in_hand=0,
+            ),
+            letter_grade=None,
+            neutral_prior_score=PICK_ENGINE.neutral_prior_score,
+            metadata=RatingSourceMetadata(
+                requested_format=requested_format.casefold(),
+                source=NEUTRAL_PRIOR_SOURCE,
+                source_format=None,
+                fallback_reason="profile-no-games",
+            ),
+        )
+    if profile.schema_version == 1:
         source_format = profile.event_format
         fallback_reason = None
     else:
@@ -703,6 +728,10 @@ def _close_pick_label(
         return None
 
     top_card, second_card = draftable_cards[:2]
+    # A prior score says nothing about how close the two cards really are.
+    if top_card.no_data or second_card.no_data:
+        return None
+
     if ranking_mode == "score":
         score_delta = max(0.0, top_card.raw_score - second_card.raw_score)
         if score_delta <= CLOSE_DO_SCORE_THRESHOLD:

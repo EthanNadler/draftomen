@@ -1024,17 +1024,17 @@ def _validated_card_observations(
                 invalid_keys.add(key)
                 continue
             raw_value = raw_number if games > 0 else None
-        if games > 0 and raw_value is None:
-            skip_counts["card_rating_missing_rate"] += 1
-            invalid_keys.add(key)
-            continue
-        successes = 0 if games == 0 else int(round(raw_value * games))
+        # 17Lands withholds the GIH rate for thin samples. Keep the row as a
+        # zero-sample prior so its ALSA survives and other formats can still
+        # supply a supported rate.
+        samples = 0 if raw_value is None else games
+        successes = 0 if raw_value is None else int(round(raw_value * games))
         valid[map_grp_id] = _CardObservation(
             grp_id=map_grp_id,
             raw_value=raw_value,
             average_last_seen_at=stats.average_last_seen_at,
             successes=successes,
-            samples=games,
+            samples=samples,
         )
     return valid, frozenset(invalid_keys)
 

@@ -660,6 +660,54 @@ def test_generated_card_ratings_preserve_source_alsa_and_missing_value() -> None
     assert restored_ratings["oracle_id:removal-id"].average_last_seen_at is None
 
 
+def _withheld_rate_ratings(event_format: str) -> SeventeenLandsFormatData:
+    ratings = _format_ratings(event_format)
+    stats = ratings.card_ratings[1]
+    withheld = replace(
+        stats,
+        gih_win_rate=None,
+        average_last_seen_at=7.65,
+        sample_counts=replace(stats.sample_counts, games_in_hand=36),
+    )
+    return replace(ratings, card_ratings={**ratings.card_ratings, 1: withheld})
+
+
+def test_withheld_gih_rate_keeps_card_as_zero_sample_prior_with_alsa() -> None:
+    result = _generate_tst(ratings=_withheld_rate_ratings("QuickDraft"))
+
+    card = next(
+        card for card in result.profile.card_ratings if card.card_key == "oracle_id:support-id"
+    )
+    counts = result.card_rating_counts
+
+    assert card.average_last_seen_at == 7.65
+    assert card.gih_win_rate.raw_value is None
+    assert card.gih_win_rate.samples == 0
+    assert card.gih_win_rate.value == card.gih_win_rate.prior_value
+    assert card.gih_win_rate.aggregate_evidence is None
+    assert "card_rating_missing_rate" not in result.report.skip_reasons
+    assert counts is not None
+    assert counts.rejected == {}
+    assert counts.reconciled is True
+
+
+def test_withheld_gih_rate_yields_to_supported_rate_from_other_format() -> None:
+    result = _generate_tst(
+        ratings=_withheld_rate_ratings("QuickDraft"),
+        fallback_ratings=(_format_ratings("PremierDraft"),),
+    )
+
+    card = next(
+        card for card in result.profile.card_ratings if card.card_key == "oracle_id:support-id"
+    )
+    evidence = card.gih_win_rate.aggregate_evidence
+
+    assert card.gih_win_rate.samples > 0
+    assert evidence is not None
+    assert evidence.source_format == "premierdraft"
+    assert evidence.fallback_reason == "thin-exact-evidence"
+
+
 def test_aggregate_card_alsa_uses_chosen_source() -> None:
     exact = _format_ratings("QuickDraft", card1_games=0)
     premier = _format_ratings("PremierDraft")
@@ -1880,11 +1928,10 @@ def test_card_rating_counts_account_for_every_requested_format_row() -> None:
     assert counts is not None
     assert counts.to_json() == {
         "fetched": 5,
-        "accepted": 1,
+        "accepted": 2,
         "from_other_formats": 1,
         "rejected": {
             "card_rating_duplicate_printing": 1,
-            "card_rating_missing_rate": 1,
             "card_rating_replaced_by_other_format": 1,
             "card_rating_unmatched_metadata": 1,
         },
@@ -1892,7 +1939,6 @@ def test_card_rating_counts_account_for_every_requested_format_row() -> None:
     assert counts.reconciled is True
     assert len(result.profile.card_ratings) == counts.accepted + counts.from_other_formats
     assert dict(result.report.skip_reasons) == {
-        "card_rating_missing_rate": 1,
         "card_rating_unmatched_metadata": 2,
     }
     assert "card_rating_counts" not in result.report.to_json()

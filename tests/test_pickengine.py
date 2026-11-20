@@ -73,6 +73,7 @@ from draftomen.semantic_roles import (
     resolve_card_roles,
 )
 from draftomen.seventeen import (
+    FORMAT_RATING_SOURCE,
     PREMIER_DRAFT_FORMAT,
     QUICK_DRAFT_FORMAT,
     ColorPairWinRate,
@@ -1365,12 +1366,17 @@ def test_profile_rating_preserves_evidence_and_computes_grade() -> None:
     assert positive.sample_counts.games_in_hand == 7
     assert positive.average_last_seen_at == pytest.approx(3.5)
     assert positive.letter_grade == "B"
-    assert zero.gih_win_rate == pytest.approx(0.52)
+    assert zero.gih_win_rate is None
     assert zero.sample_counts.games_in_hand == 0
     assert zero.average_last_seen_at == pytest.approx(2.0)
     assert zero.letter_grade is None
+    assert zero.neutral_prior is True
+    assert zero.metadata.source_format is None
+    assert zero.metadata.fallback_reason == "profile-no-games"
+    assert by_id[2].no_data is True
+    assert by_id[2].prior_adjusted_by_alsa is True
     assert middle.letter_grade == "D"
-    for rating in (positive, zero, middle):
+    for rating in (positive, middle):
         assert rating.opening_hand_win_rate is None
         assert rating.drawn_improvement_win_rate is None
         assert rating.neutral_prior_score is None
@@ -1569,14 +1575,16 @@ def test_profile_rating_metadata_consumes_versioned_aggregate_authority() -> Non
     assert current_by_id[3].rating.metadata.source_format == "quickdraft"
     assert current_by_id[3].rating.metadata.fallback_reason is None
     assert current_by_id[2].rating.metadata.source_format is None
-    assert current_by_id[2].rating.metadata.fallback_reason is None
+    assert current_by_id[2].rating.metadata.fallback_reason == "profile-no-games"
 
     for card in legacy.cards:
         assert card.rating.metadata.requested_format == "quickdraft"
-        assert card.rating.metadata.source_format == (
-            None if card.rating.sample_counts.games_in_hand == 0 else "quickdraft"
-        )
-        assert card.rating.metadata.fallback_reason is None
+        if card.rating.sample_counts.games_in_hand == 0:
+            assert card.rating.metadata.source_format is None
+            assert card.rating.metadata.fallback_reason == "profile-no-games"
+        else:
+            assert card.rating.metadata.source_format == "quickdraft"
+            assert card.rating.metadata.fallback_reason is None
 
 
 
@@ -1755,6 +1763,40 @@ def test_recommendation_confidence_summary_uses_shared_open_pick_copy() -> None:
         ranking_mode="score",
         phase="building",
     ) is None
+
+
+@pytest.mark.parametrize("prior_index", [0, 1])
+@pytest.mark.parametrize("ranking_mode", ["score", "win_rate"])
+def test_close_pick_needs_gih_evidence_for_both_top_cards(
+    prior_index: int,
+    ranking_mode: str,
+) -> None:
+    cards = _comparison_cards(base_scores=(60.0, 59.5))
+    neutral_rating = PickEngine().score_pack(
+        offered_grp_ids=(1,),
+        card_database=_card_database(),
+    ).cards[0].rating
+    prior_cards = tuple(
+        replace(card, rating=neutral_rating) if index == prior_index else card
+        for index, card in enumerate(cards)
+    )
+
+    assert neutral_rating.neutral_prior is True
+    assert recommendation_confidence_summary(
+        cards=cards,
+        ranking_mode=ranking_mode,
+        phase="building",
+    ).startswith("close pick")
+    assert recommendation_confidence_summary(
+        cards=prior_cards,
+        ranking_mode=ranking_mode,
+        phase="building",
+    ) is None
+    assert recommendation_confidence_summary(
+        cards=prior_cards,
+        ranking_mode=ranking_mode,
+        phase="open",
+    ) == "early/open pick — stay flexible"
 
 
 def test_engine_comparison_filters_basics_and_wires_real_score_pack() -> None:
@@ -4856,6 +4898,13 @@ def _comparison_cards(
             replace(
                 card,
                 card=replace(card.card, name=names[index]),
+                rating=replace(
+                    card.rating,
+                    gih_win_rate=base_ratings[index],
+                    sample_counts=replace(card.rating.sample_counts, games_in_hand=500),
+                    neutral_prior_score=None,
+                    metadata=replace(card.rating.metadata, source=FORMAT_RATING_SOURCE),
+                ),
                 original_index=index,
                 base_rating=base_ratings[index],
                 base_score=base_scores[index],
