@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+- Cards whose 17Lands win rate is withheld for a thin sample stay in set
+  profiles with their ALSA. Profile generation used to drop them, so cards
+  such as TRK's Combadge showed as a bare DO 50. A profile card with no games
+  in hand now uses the neutral prior adjusted by its ALSA and shows no win
+  rate, and the "close pick" banner no longer fires when either of the top
+  two cards has no win rate. (#1076)
 - TRK basic lands no longer show as "Unknown card" in live drafts. The TRK
   card data had no basic lands, because neither Scryfall nor 17Lands lists
   their Arena ids. `scripts/patch_scryfall_arena_ids.py` has a new
