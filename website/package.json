@@ -10,12 +10,12 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.3.4",
-    "astro": "^7.4.7",
-    "daisyui": "^5.7.50",
+    "@tailwindcss/vite": "^4.3.5",
+    "astro": "^7.4.11",
+    "daisyui": "^5.8.0",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "wrangler": "4.158.0"
+    "wrangler": "4.161.0"
   }
 }
