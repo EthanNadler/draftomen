@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-11-20
+
 - Cards whose 17Lands win rate is withheld for a thin sample stay in set
   profiles with their ALSA. Profile generation used to drop them, so cards
   such as TRK's Combadge showed as a bare DO 50. A profile card with no games
