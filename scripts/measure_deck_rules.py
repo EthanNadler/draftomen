@@ -16,9 +16,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from draftomen.card_data_client import CardDataClient, CardDataClientError
 from draftomen.carddb import CardInfo
 from draftomen.seventeen import GRADE_LABELS, load_cached_17lands_data
+from draftomen.splash import land_mana_colors
 
 COLORS = "WUBRG"
 WIN_CUTOFFS: dict[str, int] = {"PremierDraft": 7, "PickTwoDraft": 4}
@@ -31,6 +34,8 @@ MAX_DUAL_BUCKET = 4
 MAX_SPLASH_CARD_BUCKET = 5
 PERCENTILES = (10, 25, 50, 75, 90)
 KIND_LABELS = ("2 colors", "2 + splash", "3 colors", "other")
+FIXER_KINDS = ("land search", "mana creature", "mana rock", "Treasure")
+CONFIDENCE_Z = 1.96
 
 _SYMBOL = re.compile(r"\{([^}]+)\}")
 # Two-color or any-color mana, Treasure, and basic land search, which also
@@ -43,6 +48,16 @@ FIXER_PATTERN = re.compile(
     r"|Search your library for a basic land",
     re.IGNORECASE,
 )
+_LAND_SEARCH = re.compile(
+    r"basic landcycling|\b(plains|island|swamp|mountain|forest)cycling"
+    r"|search your library for (?:a|up to \w+) basic land",
+    re.IGNORECASE,
+)
+_TAP_FOR_MANA = re.compile(r"\{T\}[^:\n]*:\s*Add ([^.\n]*)", re.IGNORECASE)
+_TREASURE_MAKER = re.compile(r"\bcreates?\b[^.\n]*\bTreasure tokens?\b", re.IGNORECASE)
+_QUOTED_TEXT = re.compile(r'"[^"]*"|“[^”]*”')
+_REMINDER_TEXT = re.compile(r"\([^)]*\)")
+_PERMANENT_TYPES = ("Artifact", "Creature", "Enchantment", "Planeswalker", "Battle")
 
 
 class MeasureError(RuntimeError):
@@ -76,6 +91,7 @@ class DeckRecord:
     double_symbol: list[tuple[str, str]]
     splash_cards: list[tuple[CardInfo, int]]
     nonland_fixers: int
+    splash_fixers: Counter[str] = field(default_factory=Counter)
 
     @property
     def kind(self) -> str:
@@ -146,6 +162,12 @@ def event_from_filename(*, path: Path) -> str | None:
     return None
 
 
+def parse_count(*, value: str) -> int:
+    """Parse a count that may be empty or stored as a decimal such as 1.0."""
+
+    return int(float(value)) if value else 0
+
+
 def read_decks(*, path: Path) -> tuple[str, list[Deck]]:
     """Read a game data file into one deck per draft id.
     The row with the highest build index supplies colors and cards.
@@ -186,7 +208,7 @@ def read_decks(*, path: Path) -> tuple[str, list[Deck]]:
                     f"{path} mixes event types {event!r} and {row_event!r}."
                 )
             draft_id = row[index["draft_id"]]
-            build = int(row[index["build_index"]] or 0)
+            build = parse_count(value=row[index["build_index"]])
             deck = decks.get(draft_id)
             if deck is None or build > deck.build:
                 previous = deck
@@ -196,9 +218,9 @@ def read_decks(*, path: Path) -> tuple[str, list[Deck]]:
                     main_colors=row[index["main_colors"]],
                     splash_colors=row[index["splash_colors"]],
                     cards={
-                        name: int(row[position])
+                        name: parse_count(value=row[position])
                         for position, name in deck_columns
-                        if row[position] not in ("", "0")
+                        if parse_count(value=row[position]) != 0
                     },
                     games=0 if previous is None else previous.games,
                     wins=0 if previous is None else previous.wins,
@@ -243,6 +265,34 @@ def is_nonland_fixer(*, card: CardInfo) -> bool:
     return not is_land(card=card) and bool(FIXER_PATTERN.search(card.oracle_text or ""))
 
 
+def _sides(*, card: CardInfo) -> list[tuple[str, str]]:
+    if card.faces:
+        return [(face.type_line or "", face.oracle_text or "") for face in card.faces]
+    return [(card.type_line or " ".join(card.types), card.oracle_text or "")]
+
+
+def fixer_kind(*, card: CardInfo, splash_color: str) -> str | None:
+    """Return how a non-land card fixes the splash color, or None.
+    The first matching kind wins: land search, mana creature or rock, Treasure.
+    """
+
+    if is_land(card=card):
+        return None
+    sides = _sides(card=card)
+    if any(_LAND_SEARCH.search(text) for _, text in sides):
+        return "land search"
+    for type_line, text in sides:
+        if not any(name in type_line for name in _PERMANENT_TYPES):
+            continue
+        cleaned = _REMINDER_TEXT.sub("", _QUOTED_TEXT.sub("", text))
+        for clause in _TAP_FOR_MANA.findall(cleaned):
+            if "any color" in clause.lower() or f"{{{splash_color}}}" in clause:
+                return "mana creature" if "Creature" in type_line else "mana rock"
+    if any(_TREASURE_MAKER.search(text) for _, text in sides):
+        return "Treasure"
+    return None
+
+
 def classify_deck(
     *,
     deck: Deck,
@@ -264,13 +314,15 @@ def classify_deck(
                 unmatched[name] += count
             continue
         if is_land(card=card):
-            produced = tuple(color for color in card.produced_mana if color in COLORS)
             if is_basic(card=card):
+                produced = tuple(
+                    color for color in card.produced_mana if color in COLORS
+                )
                 for color in produced:
                     basics[color] += count
                 basic_total += count
             else:
-                duals.extend([produced] * count)
+                duals.extend([land_mana_colors(card=card)] * count)
         else:
             spells.extend([card] * count)
     lands = basic_total + len(duals)
@@ -290,6 +342,12 @@ def classify_deck(
         for color in deck.splash_colors:
             if card_pips[color]:
                 splash_cards.append((card, card_pips[color]))
+    splash_fixers: Counter[str] = Counter()
+    if len(deck.splash_colors) == 1:
+        for card in spells:
+            kind = fixer_kind(card=card, splash_color=deck.splash_colors)
+            if kind is not None:
+                splash_fixers[kind] += 1
     return DeckRecord(
         deck=deck,
         lands=lands,
@@ -301,6 +359,7 @@ def classify_deck(
         double_symbol=double_symbol,
         splash_cards=splash_cards,
         nonland_fixers=sum(1 for card in spells if is_nonland_fixer(card=card)),
+        splash_fixers=splash_fixers,
     )
 
 
@@ -386,6 +445,61 @@ def has_two_symbol_splash_card(*, record: DeckRecord) -> bool:
     """Return whether any splash card has two or more splash symbols."""
 
     return any(count >= 2 for _, count in record.splash_cards)
+
+
+@dataclass(frozen=True, slots=True)
+class FixerWeight:
+    """Splash land sources one non-land fixer replaces, with a 95% margin."""
+
+    kind: str
+    replaced: float
+    margin: float
+    decks: int
+
+
+def fixer_weights(*, records: Sequence[DeckRecord]) -> list[FixerWeight] | None:
+    """Fit splash land sources on fixer counts by least squares.
+    Return None when there are too few decks or the fit is singular.
+    """
+
+    one = single_splash(records=records)
+    # A kind no deck has would make the fit singular, so the fit leaves it out.
+    kinds = [kind for kind in FIXER_KINDS if any(r.splash_fixers[kind] for r in one)]
+    columns = len(kinds) + 3
+    if len(one) < columns + 1:
+        return None
+    design = np.array(
+        [
+            [
+                *(record.splash_fixers[kind] for kind in kinds),
+                len(record.splash_cards),
+                int(has_two_symbol_splash_card(record=record)),
+                1,
+            ]
+            for record in one
+        ],
+        dtype=float,
+    )
+    target = np.array([splash_source_count(record=r) for r in one], dtype=float)
+    try:
+        inverse = np.linalg.inv(design.T @ design)
+    except np.linalg.LinAlgError:
+        return None
+    if not np.all(np.isfinite(inverse)):
+        return None
+    coefficients = inverse @ design.T @ target
+    residuals = target - design @ coefficients
+    sigma_squared = float(residuals @ residuals) / (len(one) - columns)
+    errors = np.sqrt(np.maximum(np.diag(inverse) * sigma_squared, 0.0))
+    return [
+        FixerWeight(
+            kind=kind,
+            replaced=-float(coefficients[position]),
+            margin=CONFIDENCE_Z * float(errors[position]),
+            decks=sum(1 for r in one if r.splash_fixers[kind]),
+        )
+        for position, kind in enumerate(kinds)
+    ]
 
 
 def grade_of(*, card: CardInfo, ratings: Any) -> str | None:
@@ -477,6 +591,23 @@ def _print_splash(*, label: str, group: list[DeckRecord]) -> None:
     )
 
 
+def _print_fixer_weights(*, label: str, group: list[DeckRecord]) -> None:
+    one = single_splash(records=group)
+    print(
+        "\n== Splash land sources replaced by each non-land fixer "
+        f"({label}, n={len(one)})"
+    )
+    weights = fixer_weights(records=group)
+    if weights is None:
+        print("  too few decks to fit")
+        return
+    for weight in weights:
+        print(
+            f"  {weight.kind:13} {weight.replaced:+.2f} +/- {weight.margin:.2f}"
+            f" (decks with it: {weight.decks})"
+        )
+
+
 def _print_winning_grades(*, winning: list[DeckRecord], ratings: Any) -> None:
     one = single_splash(records=winning)
     grades = [
@@ -533,6 +664,8 @@ def print_report(*, event: str, records: list[DeckRecord], ratings: Any) -> None
     for label, group in (("winning", winning), ("all", records)):
         _print_three_color(label=label, group=group)
         _print_splash(label=label, group=group)
+    for label, group in (("winning", winning), ("all", records)):
+        _print_fixer_weights(label=label, group=group)
     _print_winning_grades(winning=winning, ratings=ratings)
     _print_win_rates(pool=records)
 

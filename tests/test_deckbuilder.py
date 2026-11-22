@@ -1399,6 +1399,73 @@ def test_allow_splash_with_one_dual_fills_the_rest_with_basics() -> None:
     assert selection.eligible_count == 5
 
 
+def _splash_mana_base_with_second_land(*, second_land: CardInfo) -> ManaBase:
+    config = replace(
+        DECK_BUILDER,
+        target_spell_count=4,
+        creature_floor=0,
+        creature_ceiling=4,
+        minimum_two_drops=0,
+        maximum_expensive_spells=4,
+        bench_card_count=0,
+    )
+    pool_ids = (1, 2, 3, 4, 5, 8, 9)
+    database = _splash_card_database(fixing_count=2)
+    database.cards[9] = second_land
+    selection = select_deck_spells(
+        pool_grp_ids=pool_ids,
+        card_database=database,
+        pair="WU",
+        ratings_data=_splash_ratings_data(),
+        allow_splash=True,
+        config=config,
+    )
+    return select_mana_base(
+        pool_grp_ids=pool_ids,
+        card_database=database,
+        pair="WU",
+        spell_selection=selection,
+        config=config,
+    )
+
+
+def test_token_only_land_is_not_counted_as_a_splash_source() -> None:
+    token_land = _card(
+        grp_id=9,
+        name="Gaseous Anomaly",
+        colors=(),
+        mana_value=0.0,
+        types=("Land",),
+        produced_mana=("W", "U", "B", "R", "G"),
+        oracle_text='{T}: Add {C}.\n{5}{U}: Create a token with "{T}: Add one mana of any color."',
+    )
+
+    mana_base = _splash_mana_base_with_second_land(second_land=token_land)
+
+    assert [land.card.name for land in mana_base.nonbasic_lands] == ["Red Fixing Land One"]
+    assert _basic_count(mana_base=mana_base, name="Mountain") == 2
+
+
+def test_shock_land_still_counts_as_a_splash_source() -> None:
+    shock_land = _card(
+        grp_id=9,
+        name="Blood Crypt",
+        colors=(),
+        mana_value=0.0,
+        types=("Land — Swamp Mountain",),
+        produced_mana=("B", "R"),
+        oracle_text="As this land enters, you may pay 2 life. If you don't, it enters tapped.",
+    )
+
+    mana_base = _splash_mana_base_with_second_land(second_land=shock_land)
+
+    assert {land.card.name for land in mana_base.nonbasic_lands} == {
+        "Red Fixing Land One",
+        "Blood Crypt",
+    }
+    assert _basic_count(mana_base=mana_base, name="Mountain") == 1
+
+
 def test_single_splash_card_uses_two_fixing_lands_and_one_basic() -> None:
     config = replace(
         DECK_BUILDER,

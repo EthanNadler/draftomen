@@ -475,11 +475,61 @@ def _fixing_counts(
         if not _is_drafted_fixing_land(card=card):
             continue
 
-        for color in card.produced_mana:
+        for color in land_mana_colors(card=card):
             if color in counts:
                 counts[color] += 1
 
     return counts
+
+
+_BASIC_LAND_TYPE_COLORS = (
+    ("Plains", "W"),
+    ("Island", "U"),
+    ("Swamp", "B"),
+    ("Mountain", "R"),
+    ("Forest", "G"),
+)
+_QUOTED_TEXT_RE = re.compile(r'"[^"]*"|\u201c[^\u201d]*\u201d')
+_ADD_CLAUSE_RE = re.compile(r":\s*Add ([^.\n]*)", re.IGNORECASE)
+_FLEXIBLE_MANA_RE = re.compile(
+    r"any color|chosen color|any type|any one color|any combination of colors",
+    re.IGNORECASE,
+)
+
+
+def land_mana_colors(*, card: CardInfo) -> tuple[str, ...]:
+    """Return the colours a land itself can produce, in WUBRG order.
+    Ignores mana from tokens or granted abilities that Scryfall also lists.
+    """
+    ordered_produced = tuple(
+        color for color in COLOR_ORDER if color in card.produced_mana
+    )
+    if card.faces:
+        sides = [(face.type_line or "", face.oracle_text or "") for face in card.faces]
+    else:
+        sides = [
+            (card.type_line or " ".join(card.types), card.oracle_text or ""),
+        ]
+    land_sides = [side for side in sides if "Land" in side[0]]
+    if not land_sides:
+        return ordered_produced
+
+    found: set[str] = set()
+    for type_line, text in land_sides:
+        side_colors = {
+            color
+            for land_type, color in _BASIC_LAND_TYPE_COLORS
+            if re.search(rf"\b{land_type}\b", type_line)
+        }
+        clauses = _ADD_CLAUSE_RE.findall(_QUOTED_TEXT_RE.sub("", text))
+        if not clauses and not side_colors:
+            return ordered_produced
+        for clause in clauses:
+            if _FLEXIBLE_MANA_RE.search(clause):
+                return ordered_produced
+            side_colors.update(re.findall(r"\{([WUBRG])\}", clause))
+        found |= side_colors
+    return tuple(color for color in COLOR_ORDER if color in found)
 
 
 def _active_splash_color(
@@ -583,7 +633,7 @@ def _is_splash_fixer(
     config: SplashConfig,
 ) -> bool:
     active_color = state.active_color
-    if active_color is None or active_color not in card.produced_mana:
+    if active_color is None or active_color not in land_mana_colors(card=card):
         return False
     if not _is_drafted_fixing_land(card=card):
         return False

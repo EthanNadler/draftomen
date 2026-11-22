@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import random
 import socket
 from collections import Counter
 from pathlib import Path
@@ -309,6 +310,8 @@ def test_main_prints_every_stat_section(
     assert "A- or better: 100%  B or better: 100%" in output
     assert "== Win rate by fixing pieces" in output
     assert "== Win rate by non-land fixer count" in output
+    assert "== Splash land sources replaced by each non-land fixer (winning" in output
+    assert "== Splash land sources replaced by each non-land fixer (all" in output
 
 
 def test_main_fails_when_ratings_are_missing(
@@ -401,3 +404,215 @@ def test_ratings_format_overrides_the_event_of_the_file(
     assert main(argv=argv) == 0
     assert main(argv=[*argv, "--ratings-format", "QuickDraft"]) == 0
     assert requested == ["PremierDraft", "QuickDraft"]
+
+
+def test_read_decks_accepts_decimal_counts_and_skips_zero_columns(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        dict(
+            draft="a",
+            build="1.0",
+            won=True,
+            cards={"Plains": "13.0", "Island": "0.0", "Blue Bear": "2.0"},
+        ),
+        dict(draft="a", build="0.0", won=False, cards={"Plains": "1.0"}),
+    ]
+    path = _write_game_data(path=tmp_path / "data.csv.gz", rows=rows)
+
+    _, decks = read_decks(path=path)
+
+    assert len(decks) == 1
+    assert decks[0].cards == {"Plains": 13, "Blue Bear": 2}
+    assert decks[0].games == 2
+
+
+def test_land_colors_ignore_mana_from_created_tokens() -> None:
+    odd_land = _card(
+        grp_id=20,
+        name="Token Land",
+        types=("Land",),
+        produced=("W", "U", "B", "R", "G"),
+        oracle_text='{T}: Add {C}.\nWhen this enters, create a token with "{T}: Add one mana of any color."',
+    )
+    deck = measure_deck_rules.Deck(
+        event="PremierDraft",
+        build=0,
+        main_colors="WU",
+        splash_colors="",
+        cards={"Plains": 16, "Token Land": 1},
+        games=3,
+        wins=3,
+    )
+
+    record = classify_deck(
+        deck=deck, index=CardIndex.build(cards=[*_cards(), odd_land])
+    )
+
+    assert record.duals == [()]
+    assert record.sources["B"] == 0
+    assert record.sources["W"] == 16
+
+
+def _fixer(*, text: str, types: tuple[str, ...] = ("Creature",)) -> CardInfo:
+    return _card(grp_id=30, name="Fixer", types=types, oracle_text=text)
+
+
+@pytest.mark.parametrize(
+    ("card", "expected"),
+    [
+        (
+            _fixer(text="Basic landcycling {1} ({1}, Discard this card: Search.)"),
+            "land search",
+        ),
+        (
+            _fixer(
+                text="Search your library for up to two basic land cards.",
+                types=("Sorcery",),
+            ),
+            "land search",
+        ),
+        (_fixer(text="{T}: Add one mana of any color."), "mana creature"),
+        (_fixer(text="{T}: Add {B}.", types=("Artifact",)), "mana rock"),
+        (_fixer(text="{T}, Pay 1 life: Add {B} or {R}."), "mana creature"),
+        (
+            _fixer(
+                text="When this enters, create a Treasure token.", types=("Creature",)
+            ),
+            "Treasure",
+        ),
+        (_fixer(text="{T}: Add {G}."), None),
+        (_fixer(text="Add one mana of any color.", types=("Sorcery",)), None),
+        (_fixer(text='Creatures you control have "{T}: Add {B}."'), None),
+        (_fixer(text="Flying"), None),
+    ],
+)
+def test_fixer_kind_classifies_non_land_cards(
+    card: CardInfo, expected: str | None
+) -> None:
+    assert measure_deck_rules.fixer_kind(card=card, splash_color="B") == expected
+
+
+def test_classify_deck_counts_splash_fixers_only_for_single_splash() -> None:
+    cards = {**_two_color_cards(), "Fixer Elf": 2}
+    single = measure_deck_rules.Deck(
+        event="PremierDraft",
+        build=0,
+        main_colors="WU",
+        splash_colors="B",
+        cards=cards,
+        games=3,
+        wins=3,
+    )
+    plain = measure_deck_rules.Deck(
+        event="PremierDraft",
+        build=0,
+        main_colors="WU",
+        splash_colors="",
+        cards=cards,
+        games=3,
+        wins=3,
+    )
+
+    assert classify_deck(deck=single, index=_index()).splash_fixers == Counter(
+        {"mana creature": 2}
+    )
+    assert classify_deck(deck=plain, index=_index()).splash_fixers == Counter()
+
+
+def _synthetic_records(*, count: int) -> list[measure_deck_rules.DeckRecord]:
+    rng = random.Random(7)
+    records = []
+    for _ in range(count):
+        fixers = Counter(
+            {
+                "land search": rng.randint(0, 2),
+                "mana creature": rng.randint(0, 3),
+                "mana rock": rng.randint(0, 2),
+                "Treasure": rng.randint(0, 2),
+            }
+        )
+        splash_cards = [
+            (_cards()[8], rng.randint(1, 2)) for _ in range(rng.randint(1, 5))
+        ]
+        sources = 9 - fixers["mana creature"]
+        records.append(
+            measure_deck_rules.DeckRecord(
+                deck=measure_deck_rules.Deck(
+                    event="PremierDraft",
+                    build=0,
+                    main_colors="WU",
+                    splash_colors="B",
+                    cards={},
+                    games=3,
+                    wins=3,
+                ),
+                lands=17,
+                basics=Counter(),
+                duals=[],
+                sources={**dict.fromkeys("WUBRG", 0), "B": sources},
+                color_cards=Counter(),
+                spells=[],
+                double_symbol=[],
+                splash_cards=splash_cards,
+                nonland_fixers=0,
+                splash_fixers=fixers,
+            )
+        )
+    return records
+
+
+def test_fixer_weights_recovers_a_known_replacement_rate() -> None:
+    records = _synthetic_records(count=60)
+
+    weights = measure_deck_rules.fixer_weights(records=records)
+
+    assert weights is not None
+    by_kind = {weight.kind: weight for weight in weights}
+    assert by_kind["mana creature"].replaced == pytest.approx(1.0)
+    assert by_kind["mana rock"].replaced == pytest.approx(0.0, abs=1e-6)
+    assert by_kind["land search"].replaced == pytest.approx(0.0, abs=1e-6)
+    assert by_kind["mana creature"].decks == sum(
+        1 for record in records if record.splash_fixers["mana creature"]
+    )
+
+
+def test_fixer_weights_returns_none_with_too_few_decks() -> None:
+    assert measure_deck_rules.fixer_weights(records=_synthetic_records(count=7)) is None
+
+
+def test_fixer_weights_returns_none_for_a_singular_fit() -> None:
+    records = _synthetic_records(count=20)
+    for record in records:
+        record.splash_cards = [(_cards()[8], 1)] * 2
+
+    assert measure_deck_rules.fixer_weights(records=records) is None
+
+
+def test_report_says_too_few_decks_for_the_fixer_fit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    measure_deck_rules.print_report(
+        event="PremierDraft",
+        records=_synthetic_records(count=3),
+        ratings=_stub_ratings(),
+    )
+
+    output = capsys.readouterr().out
+    assert "== Splash land sources replaced by each non-land fixer (all, n=3)" in output
+    assert "too few decks to fit" in output
+
+
+def test_fixer_weights_leave_out_a_kind_no_deck_has() -> None:
+    records = _synthetic_records(count=60)
+    for record in records:
+        record.splash_fixers["Treasure"] = 0
+
+    weights = measure_deck_rules.fixer_weights(records=records)
+
+    assert weights is not None
+    assert [weight.kind for weight in weights] == [
+        "land search",
+        "mana creature",
+        "mana rock",
+    ]

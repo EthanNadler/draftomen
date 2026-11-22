@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+- Splash planning and the deck builder read a land's colours from its own mana
+  abilities and basic land types. Scryfall also lists mana from tokens a land
+  creates, so TRK's Anomalies, such as Gaseous Anomaly, counted as a source of
+  every colour although they only tap for colourless mana. The same applied to
+  Three Tree City, Starfleet Academy, the LCI Caves and Treasure Cove. (#1083)
+- `scripts/measure_deck_rules.py` reports how many splash land sources each
+  kind of non-land fixer replaces in winning decks, reads land colours the same
+  way the app does, and accepts game data that stores counts as decimals.
+  Pooled across BLB, DFT, EOE, FDN, FIN and TDM, a mana creature or mana rock
+  replaced about 0.2 splash land sources and a land-search spell or Treasure
+  maker about 0.1. The highest single-set figure was about 0.3, for BLB's mana
+  rocks. Even then it takes three or more fixers to replace one land, so the
+  app keeps counting only lands as splash sources. (#1083)
+
 ## [0.6.7] - 2026-11-20
 
 - Cards whose 17Lands win rate is withheld for a thin sample stay in set

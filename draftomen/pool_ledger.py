@@ -19,6 +19,7 @@ from draftomen.splash import (
     SplashState,
     card_is_castable_in_pair,
     infer_splash_state,
+    land_mana_colors,
     splash_requirement,
 )
 
@@ -717,7 +718,7 @@ def _land_is_eligible_for_projection(
 
 
 def _land_source_colors(*, card: CardInfo) -> tuple[str, ...]:
-    source_colors = card.produced_mana or card.colors
+    source_colors = land_mana_colors(card=card) or card.colors
     source_set = set(source_colors)
     return tuple(color for color in COLOR_ORDER if color in source_set)
 
