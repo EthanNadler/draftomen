@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+- Splash planning and the deck builder read a land's colours from its own mana
+  abilities and basic land types. Scryfall also lists mana from tokens a land
+  creates, so TRK's Anomalies, such as Gaseous Anomaly, counted as a source of
+  every colour although they only tap for colourless mana. The same applied to
+  Three Tree City, Starfleet Academy, the LCI Caves and Treasure Cove. (#1083)
+
 ## [0.6.7] - 2026-11-20
 
 - Cards whose 17Lands win rate is withheld for a thin sample stay in set
