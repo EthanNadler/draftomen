@@ -573,22 +573,42 @@
     "mkm": {
       "augmented": null,
       "card_data": {
-        "bytes": 51693,
-        "sha256": "70e5f66df352e4df2dcf886696f8b400f10605e87ee713599608425470fe848e",
+        "bytes": 60884,
+        "sha256": "af321b5a991a263475bf97c9b22d3cb73605ef848c2c347c579ba2833fb65d7c",
         "url": "https://www.draftomen.com/card-data/mkm.json.gz"
       },
       "name": "Murders at Karlov Manor",
-      "profiles": {}
+      "profiles": {
+        "premierdraft": {
+          "maturity": "early"
+        },
+        "quickdraft": {
+          "maturity": "early"
+        },
+        "traddraft": {
+          "maturity": "early"
+        }
+      }
     },
     "mom": {
       "augmented": null,
       "card_data": {
-        "bytes": 62656,
-        "sha256": "eecb3b2aea7128f8b6971e773ae4eb55586fb369eaacbad010669ab0ce02205e",
+        "bytes": 76335,
+        "sha256": "0b8d60618d7b762a2109a144d0d4b2538ef06536f6620a9b07cd60eb62784e40",
         "url": "https://www.draftomen.com/card-data/mom.json.gz"
       },
       "name": "March of the Machine",
-      "profiles": {}
+      "profiles": {
+        "premierdraft": {
+          "maturity": "early"
+        },
+        "quickdraft": {
+          "maturity": "early"
+        },
+        "traddraft": {
+          "maturity": "early"
+        }
+      }
     },
     "msh": {
       "augmented": null,
