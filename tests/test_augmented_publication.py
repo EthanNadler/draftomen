@@ -47,7 +47,7 @@ import tests.test_profile_generation as generation_fixture
 _SET_CODE = "tst"
 _RETRIEVED_AT = "2026-09-20T12:00:00+00:00"
 _SOURCE_URL = (
-    "https://17lands-public.s3.amazonaws.com/analysis_data/draft_data/"
+    "https://data.17landscapes.com/analysis_data/draft_data/"
     "draft_data_public.TST.PremierDraft.csv.gz"
 )
 
@@ -75,7 +75,7 @@ def _card_data_bytes(set_code: str = _SET_CODE) -> bytes:
 
 _VALIDATION_START = "2026-08-01T00:00:00.000000+00:00"
 _GAME_URL = (
-    "https://17lands-public.s3.amazonaws.com/analysis_data/game_data/"
+    "https://data.17landscapes.com/analysis_data/game_data/"
     "game_data_public.TST.PremierDraft.csv.gz"
 )
 

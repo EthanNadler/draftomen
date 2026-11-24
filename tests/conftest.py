@@ -52,6 +52,21 @@ def rated_card_fetch_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return calls
 
 
+@pytest.fixture(autouse=True)
+def _no_17lands_cards_csv_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop card data exports from downloading the 17Lands cards.csv file.
+    The stub returns the header only, so no basic land rows are added.
+    """
+
+    import draftomen.card_data_export as card_data_export
+
+    def fetch(**kwargs: object) -> str:
+        del kwargs
+        return "id,expansion,name,rarity,color_identity,mana_value,types,is_booster\n"
+
+    monkeypatch.setattr(card_data_export, "fetch_17lands_cards_csv", fetch)
+
+
 @pytest.fixture
 def app_logs_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Return the folder that stands in for ~/.draftomen/logs during one test."""

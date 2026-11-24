@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+- 17Lands moved its public data from the `17lands-public` S3 bucket, which now
+  returns 403, to `data.17landscapes.com`. Draft and game dumps and `cards.csv`
+  now download from the new host, so the scheduled profile refresh and set data
+  exports work again. Augmented training finds a set's draft dumps through
+  `https://www.17lands.com/api/public_datasets`, because the old catalog still
+  lists the S3 links. Tests no longer download `cards.csv`.
 - Splash planning and the deck builder read a land's colours from its own mana
   abilities and basic land types. Scryfall also lists mana from tokens a land
   creates, so TRK's Anomalies, such as Gaseous Anomaly, counted as a source of

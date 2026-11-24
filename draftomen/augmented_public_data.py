@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import urllib.error
-import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -30,12 +29,13 @@ from draftomen.profile_input_cache import ProfileInputCache
 from draftomen.public_dump import PublicDumpSource
 from draftomen.refresh_plan import PlannedEnvironment
 from draftomen.seventeen import (
+    SEVENTEEN_LANDS_BASE_URL,
     SEVENTEEN_LANDS_USER_AGENT,
     public_draft_data_url,
     public_game_data_url,
 )
 
-_PRISMIC_API_ROOT = "https://17lands.cdn.prismic.io/api/v2"
+PUBLIC_DATASETS_ENDPOINT = f"{SEVENTEEN_LANDS_BASE_URL}/api/public_datasets"
 _MAX_CATALOG_RESPONSE_BYTES = 4 * 1024 * 1024
 _SUPPORTED_FORMATS = ("PremierDraft", "TradDraft", "QuickDraft")
 _SUPPORTED_FORMAT_SET = frozenset(_SUPPORTED_FORMATS)
@@ -54,94 +54,35 @@ class PublicDraftDataset:
     url: str
 
 
-def fetch_public_draft_listing(*, timeout_seconds: int) -> Mapping[str, Any]:
-    """Fetch the single public-data document from the public Prismic catalog."""
+def fetch_public_draft_listing(*, timeout_seconds: int) -> list[Any]:
+    """Fetch the public dataset catalog rows from the 17Lands website API."""
 
-    timeout = _validated_timeout(timeout_seconds)
-    repository = _fetch_json(url=_PRISMIC_API_ROOT, timeout_seconds=timeout)
-    refs = repository.get("refs")
-    if not isinstance(refs, list):
-        raise AugmentedPublicDataError("The public Draft Data catalog has no refs list.")
-    master_refs = [
-        ref
-        for ref in refs
-        if isinstance(ref, Mapping)
-        and (ref.get("id") == "master" or ref.get("isMasterRef") is True)
-    ]
-    if len(master_refs) != 1:
-        raise AugmentedPublicDataError(
-            "The public Draft Data catalog has no unique master ref."
-        )
-    master_ref = master_refs[0].get("ref")
-    if not isinstance(master_ref, str) or not master_ref.strip():
-        raise AugmentedPublicDataError(
-            "The public Draft Data catalog master ref is malformed."
-        )
-
-    query = urllib.parse.urlencode(
-        {
-            "q": '[[at(document.type, "public-data")]]',
-            "pageSize": "1",
-            "ref": master_ref,
-        }
+    return _fetch_json(
+        url=PUBLIC_DATASETS_ENDPOINT,
+        timeout_seconds=_validated_timeout(timeout_seconds),
     )
-    response = _fetch_json(
-        url=f"{_PRISMIC_API_ROOT}/documents/search?{query}",
-        timeout_seconds=timeout,
-    )
-    results = response.get("results")
-    total_results_size = response.get("total_results_size")
-    if (
-        not isinstance(results, list)
-        or len(results) != 1
-        or isinstance(total_results_size, bool)
-        or not isinstance(total_results_size, int)
-        or total_results_size != 1
-    ):
-        raise AugmentedPublicDataError(
-            "The public Draft Data catalog must contain exactly one public-data document."
-        )
-    document = results[0]
-    if (
-        not isinstance(document, Mapping)
-        or document.get("type") != "public-data"
-    ):
-        raise AugmentedPublicDataError(
-            "The public Draft Data catalog document is malformed."
-        )
-    data = document.get("data")
-    if not isinstance(data, Mapping):
-        raise AugmentedPublicDataError(
-            "The public Draft Data catalog data is malformed."
-        )
-    return data
 
 
 def discover_public_draft_datasets(
-    *, set_code: str, listing: Mapping[str, Any]
+    *, set_code: str, listing: list[Any]
 ) -> tuple[PublicDraftDataset, ...]:
     """Select supported canonical Draft Data links for one set, in preference order."""
 
     normalized_set = _normalized_set_code(set_code)
-    if not isinstance(listing, Mapping):
+    if not isinstance(listing, list):
         raise AugmentedPublicDataError(
-            "The public Draft Data catalog must be an object."
-        )
-    rows = listing.get("datasets")
-    if not isinstance(rows, list):
-        raise AugmentedPublicDataError(
-            "The public Draft Data catalog has no datasets list."
+            "The public Draft Data catalog must be a list."
         )
 
     selected: dict[str, PublicDraftDataset] = {}
-    for row in rows:
+    for row in listing:
         if not isinstance(row, Mapping):
             continue
-        expansion = _first_field_text(row.get("expansion"))
-        event_format = _first_field_text(row.get("format"))
+        expansion = row.get("expansion")
+        event_format = row.get("event_type")
         if (
             expansion != normalized_set
-            or event_format is None
+            or not isinstance(event_format, str)
             or event_format not in _SUPPORTED_FORMAT_SET
         ):
             continue
@@ -168,7 +109,7 @@ def acquire_augmented_training_source(
     set_code: str,
     cache: ProfileInputCache,
     timeout_seconds: int,
-    listing: Mapping[str, Any] | None = None,
+    listing: list[Any] | None = None,
     adapter: SeventeenLandsPublicDraftAdapter | None = None,
 ) -> AugmentedTrainingSource:
     """Acquire the first usable listed source through the shared validated cache."""
@@ -268,7 +209,7 @@ def acquire_augmented_game_source(
     )
 
 
-def _fetch_json(*, url: str, timeout_seconds: int) -> Mapping[str, Any]:
+def _fetch_json(*, url: str, timeout_seconds: int) -> list[Any]:
     request = urllib.request.Request(
         url,
         headers={
@@ -293,7 +234,7 @@ def _fetch_json(*, url: str, timeout_seconds: int) -> Mapping[str, Any]:
         raise AugmentedPublicDataError(
             "The public Draft Data catalog returned malformed JSON."
         ) from error
-    if not isinstance(document, Mapping):
+    if not isinstance(document, list):
         raise AugmentedPublicDataError(
             "The public Draft Data catalog response is malformed."
         )
@@ -323,40 +264,11 @@ def _normalized_set_code(value: str) -> str:
     return normalized.upper()
 
 
-def _first_field_text(value: Any) -> str | None:
-    if (
-        not isinstance(value, list)
-        or not value
-        or not isinstance(value[0], Mapping)
-    ):
-        return None
-    text = value[0].get("text")
-    return text if isinstance(text, str) else None
-
-
 def _draft_data_url(*, row: Mapping[str, Any]) -> str | None:
-    draft_data = row.get("draft_data")
-    if (
-        not isinstance(draft_data, list)
-        or not draft_data
-        or not isinstance(draft_data[0], Mapping)
-    ):
+    urls = row.get("urls")
+    if not isinstance(urls, Mapping):
         return None
-    spans = draft_data[0].get("spans")
-    if not isinstance(spans, list):
-        return None
-    hyperlinks = [
-        span
-        for span in spans
-        if isinstance(span, Mapping) and span.get("type") == "hyperlink"
-    ]
-    if len(hyperlinks) != 1:
-        return None
-    span = hyperlinks[0]
-    data = span.get("data")
-    if not isinstance(data, Mapping) or data.get("link_type") != "Web":
-        return None
-    url = data.get("url")
+    url = urls.get("draft")
     return url if isinstance(url, str) else None
 
 
