@@ -50,13 +50,13 @@ SEVENTEEN_LANDS_BASE_URL = "https://www.17lands.com"
 SEVENTEEN_LANDS_EXPANSIONS_ENDPOINT = f"{SEVENTEEN_LANDS_BASE_URL}/data/expansions"
 CARD_RATINGS_ENDPOINT = "https://api.17lands.com/api/card_data"
 COLOR_RATINGS_ENDPOINT = f"{SEVENTEEN_LANDS_BASE_URL}/color_ratings/data"
-CARDS_CSV_URL = "https://17lands-public.s3.amazonaws.com/analysis_data/cards/cards.csv"
+CARDS_CSV_URL = "https://data.17landscapes.com/analysis_data/cards/cards.csv"
 PUBLIC_DRAFT_DATA_URL_TEMPLATE = (
-    "https://17lands-public.s3.amazonaws.com/analysis_data/draft_data/"
+    "https://data.17landscapes.com/analysis_data/draft_data/"
     "draft_data_public.{set_code}.{event_format}.csv.gz"
 )
 PUBLIC_GAME_DATA_URL_TEMPLATE = (
-    "https://17lands-public.s3.amazonaws.com/analysis_data/game_data/"
+    "https://data.17landscapes.com/analysis_data/game_data/"
     "game_data_public.{set_code}.{event_format}.csv.gz"
 )
 SEVENTEEN_LANDS_USER_AGENT = (

@@ -4,7 +4,6 @@ import gzip
 import hashlib
 import json
 import urllib.error
-import urllib.parse
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -56,7 +55,7 @@ def test_public_draft_url_canonicalizes_planned_event_formats(
         reasons=("augmented-training",),
     )
     expected_url = (
-        "https://17lands-public.s3.amazonaws.com/analysis_data/draft_data/"
+        "https://data.17landscapes.com/analysis_data/draft_data/"
         f"draft_data_public.HOB.{expected_format}.csv.gz"
     )
 
@@ -71,19 +70,12 @@ def test_public_draft_url_canonicalizes_planned_event_formats(
     ) == expected_url
 
 
-def _web_link(url: str) -> dict[str, Any]:
-    return {
-        "type": "hyperlink",
-        "data": {"link_type": "Web", "url": url},
-    }
-
-
 def _row(
     *,
     set_code: str = "HOB",
     event_format: str = "PremierDraft",
     url: str | None = None,
-    spans: list[dict[str, Any]] | None = None,
+    urls: object = None,
 ) -> dict[str, Any]:
     draft_url = (
         public_draft_data_url(set_code=set_code, event_format=event_format)
@@ -91,25 +83,23 @@ def _row(
         else url
     )
     return {
-        "expansion": [{"text": set_code}],
-        "format": [{"text": event_format}],
-        "draft_data": [
+        "expansion": set_code,
+        "event_type": event_format,
+        "last_updated": "2026-10-17",
+        "urls": (
             {
-                "text": "Draft Data",
-                "spans": [_web_link(draft_url)] if spans is None else spans,
+                "draft": draft_url,
+                "game": "https://example.invalid/game.csv.gz",
+                "replay": "https://example.invalid/replay.csv.gz",
             }
-        ],
-        "game_data": [
-            {"spans": [_web_link("https://example.invalid/game.csv.gz")]}
-        ],
-        "replay_data": [
-            {"spans": [_web_link("https://example.invalid/replay.csv.gz")]}
-        ],
+            if urls is None
+            else urls
+        ),
     }
 
 
-def _listing(*rows: dict[str, Any]) -> dict[str, Any]:
-    return {"datasets": list(rows)}
+def _listing(*rows: Any) -> list[Any]:
+    return list(rows)
 
 
 def _cache(tmp_path: Path) -> ProfileInputCache:
@@ -191,41 +181,50 @@ def test_discovery_prefers_premier_and_reads_only_requested_draft_data_links() -
     )
 
 
-def test_discovery_rejects_picktwo_noncanonical_and_malformed_draft_links() -> None:
+def test_discovery_rejects_picktwo_noncanonical_and_malformed_rows() -> None:
     rows = _listing(
         _row(set_code="OTH", event_format="PremierDraft"),
         _row(event_format="PickTwoDraft"),
+        _row(event_format="PremierDraft", url="https://other.example/draft.csv.gz"),
         _row(
             event_format="PremierDraft",
-            url="https://other.example/draft.csv.gz",
+            url=public_draft_data_url(
+                set_code="HOB", event_format="PremierDraft"
+            ).replace("data.17landscapes.com", "17lands-public.s3.amazonaws.com"),
         ),
-        _row(event_format="PremierDraft", spans=[]),
-        _row(
-            event_format="PremierDraft",
-            spans=[
-                _web_link(
-                    public_draft_data_url(set_code="HOB", event_format="PremierDraft")
-                ),
-                _web_link("https://example.invalid/second.csv.gz"),
-            ],
-        ),
-        _row(
-            event_format="PremierDraft",
-            spans=[
-                {
-                    "type": "hyperlink",
-                    "data": {
-                        "link_type": "Document",
-                        "url": public_draft_data_url(
-                            set_code="HOB", event_format="PremierDraft"
-                        ),
-                    },
-                }
-            ],
-        ),
+        _row(event_format="Sealed", urls={"game": "https://example.invalid/g.gz"}),
+        _row(event_format="PremierDraft", urls={"game": "https://example.invalid/g"}),
+        _row(event_format="PremierDraft", urls={"draft": None}),
+        _row(event_format="PremierDraft", urls="not-a-mapping"),
+        {"expansion": "HOB", "event_type": "PremierDraft"},
+        {"expansion": ["HOB"], "event_type": "PremierDraft", "urls": {}},
+        {"expansion": "HOB", "event_type": None, "urls": {}},
+        "not-a-row",
+        None,
     )
 
     assert discover_public_draft_datasets(set_code="HOB", listing=rows) == ()
+
+
+def test_discovery_takes_the_first_row_per_format() -> None:
+    url = public_draft_data_url(set_code="HOB", event_format="PremierDraft")
+    rows = _listing(
+        _row(event_format="PremierDraft", urls={"draft": url, "replay": "x"}),
+        _row(event_format="PremierDraft", urls={"draft": url, "game": "y"}),
+    )
+
+    assert discover_public_draft_datasets(set_code="HOB", listing=rows) == (
+        PublicDraftDataset(event_format="PremierDraft", url=url),
+    )
+
+
+@pytest.mark.parametrize("listing", [{"datasets": []}, "rows", None])
+def test_discovery_rejects_a_listing_that_is_not_a_list(listing: object) -> None:
+    with pytest.raises(AugmentedPublicDataError, match="must be a list"):
+        discover_public_draft_datasets(
+            set_code="HOB",
+            listing=listing,  # type: ignore[arg-type]
+        )
 
 
 def test_absent_premier_uses_first_listed_supported_format(
@@ -328,7 +327,7 @@ def test_picktwo_or_missing_datasets_never_reach_the_acquisition_wrapper(
         raise AssertionError("no candidate should be attempted")
 
     monkeypatch.setattr(public_data, "acquire_public_draft_source", acquire)
-    for listing in (_listing(_row(event_format="PickTwoDraft")), {"datasets": []}):
+    for listing in (_listing(_row(event_format="PickTwoDraft")), []):
         with pytest.raises(
             AugmentedPublicDataError,
             match="No supported public Draft Data",
@@ -562,78 +561,37 @@ def _install_urlopen(
     return calls
 
 
-def test_catalog_fetch_uses_master_ref_query_and_returns_document_data(
+def test_catalog_fetch_makes_one_request_to_the_public_datasets_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls = _install_urlopen(
-        monkeypatch,
-        [
-            {
-                "refs": [
-                    {"id": "old", "ref": "old-ref"},
-                    {
-                        "id": "master",
-                        "ref": "current-ref",
-                        "isMasterRef": True,
-                    },
-                ]
-            },
-            {
-                "total_results_size": 1,
-                "results": [{"type": "public-data", "data": {"datasets": []}}],
-            },
-        ],
-    )
+    rows = [_row(event_format="PremierDraft")]
+    calls = _install_urlopen(monkeypatch, [rows])
 
-    assert fetch_public_draft_listing(timeout_seconds=11) == {"datasets": []}
-    assert len(calls) == 2
-    assert calls[0] == ("https://17lands.cdn.prismic.io/api/v2", 11)
-    endpoint, timeout = calls[1]
-    parsed = urllib.parse.urlsplit(endpoint)
-    query = urllib.parse.parse_qs(parsed.query)
-    assert parsed.path == "/api/v2/documents/search"
-    assert query == {
-        "q": ['[[at(document.type, "public-data")]]'],
-        "pageSize": ["1"],
-        "ref": ["current-ref"],
-    }
-    assert timeout == 11
+    assert fetch_public_draft_listing(timeout_seconds=11) == rows
+    assert calls == [("https://www.17lands.com/api/public_datasets", 11)]
 
 
 @pytest.mark.parametrize(
-    ("repository", "search"),
-    [
-        (b"not-json", None),
-        ({"refs": []}, None),
-        (
-            {"refs": [{"id": "master", "ref": "ref"}]},
-            {"total_results_size": 0, "results": []},
-        ),
-        (
-            {"refs": [{"id": "master", "ref": "ref"}]},
-            {
-                "total_results_size": 2,
-                "results": [{"type": "public-data", "data": {}}],
-            },
-        ),
-        (
-            {"refs": [{"id": "master", "ref": "ref"}]},
-            {
-                "total_results_size": 1,
-                "results": [{"type": "wrong-type", "data": {}}],
-            },
-        ),
-    ],
+    "payload",
+    [b"not-json", b"\xff\xfe", {"datasets": []}, "text", 7, None],
 )
-def test_catalog_rejects_malformed_or_ambiguous_responses(
+def test_catalog_rejects_malformed_or_non_list_responses(
     monkeypatch: pytest.MonkeyPatch,
-    repository: object,
-    search: object,
+    payload: object,
 ) -> None:
-    responses = [repository] if search is None else [repository, search]
-    _install_urlopen(monkeypatch, responses)
+    _install_urlopen(monkeypatch, [payload])
 
     with pytest.raises(AugmentedPublicDataError):
+        fetch_public_draft_listing(timeout_seconds=5)
+
+
+def test_catalog_rejects_an_oversize_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oversize = b"[" + b" " * public_data._MAX_CATALOG_RESPONSE_BYTES + b"]"
+    _install_urlopen(monkeypatch, [oversize])
+
+    with pytest.raises(AugmentedPublicDataError, match="too large"):
         fetch_public_draft_listing(timeout_seconds=5)
 
 

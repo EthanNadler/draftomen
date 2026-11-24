@@ -258,9 +258,9 @@ def test_build_augmented_set_rejects_invalid_or_unsupported_sets_before_public_w
     monkeypatch.chdir(tmp_path)
     fetched_timeouts: list[int] = []
 
-    def fetch_listing(*, timeout_seconds: int) -> dict[str, list[object]]:
+    def fetch_listing(*, timeout_seconds: int) -> list[object]:
         fetched_timeouts.append(timeout_seconds)
-        return {"datasets": []}
+        return []
 
     monkeypatch.setattr(
         augmented_public_data,

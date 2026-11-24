@@ -16,7 +16,7 @@ _CANDIDATE_IDS = (
     "00000000-0000-0000-0000-000000000002",
 )
 _SOURCE_URL = (
-    "https://17lands-public.s3.amazonaws.com/analysis_data/draft_data/"
+    "https://data.17landscapes.com/analysis_data/draft_data/"
     "draft_data_public.TST.PremierDraft.csv.gz"
 )
 
