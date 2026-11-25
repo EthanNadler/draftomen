@@ -44,6 +44,7 @@ from draftomen.set_profile import (
     ProfileMaturity,
     SetProfile,
     empirical_card_ratings,
+    is_reprint_rate,
 )
 from draftomen.seventeen import (
     FORMAT_RATING_SOURCE,
@@ -430,6 +431,8 @@ def _resolved_profile_rating(
         and source_format.casefold() != requested_format.casefold()
     ):
         fallback_reason = "format-fallback"
+    if is_reprint_rate(gih_rate):
+        fallback_reason = REPRINT_EVIDENCE_REASON
     return ResolvedCardRating(
         grp_id=card.grp_id,
         name=card.name,

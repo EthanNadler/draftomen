@@ -40,7 +40,9 @@ from draftomen.set_profile import (
     ProfileMaturity,
     RateEstimate,
     SetProfile,
+    SetProfileSchemaError,
     dump_set_profile,
+    is_reprint_rate,
     load_set_profile,
 )
 
@@ -2031,10 +2033,11 @@ def test_reprint_rating_fills_card_whose_rate_is_withheld() -> None:
     assert rate.value == pytest.approx(0.59)
     assert rate.raw_value == 0.68
     assert rate.samples == 4000
-    assert rate.source == "17lands:card-ratings:reprint:old"
+    assert rate.source == "17lands:card-ratings:reprint:old:premierdraft"
+    assert is_reprint_rate(rate)
     assert evidence is not None
-    assert evidence.fallback_reason == REPRINT_EVIDENCE_REASON
-    assert evidence.source_format == "premierdraft"
+    assert evidence.fallback_reason is None
+    assert evidence.source_format == result.profile.event_format
     assert evidence.confidence == pytest.approx(0.5 * min(1.0, 4000 / _config().confidence_sample_scale))
     assert card.average_last_seen_at == 7.65
     restored = SetProfile.from_json(json.loads(json.dumps(result.profile.to_json())))
@@ -2050,8 +2053,27 @@ def test_reprint_rating_adds_card_with_no_17lands_row() -> None:
     card = _card(result, "oracle_id:removal-id")
 
     assert card.gih_win_rate.value == pytest.approx(0.56)
-    assert card.gih_win_rate.aggregate_evidence.fallback_reason == REPRINT_EVIDENCE_REASON
+    assert is_reprint_rate(card.gih_win_rate)
     assert card.average_last_seen_at is None
+
+
+def test_reprint_rating_uses_only_aggregate_evidence_that_released_clients_accept() -> None:
+    result = _generate_tst(
+        ratings=_withheld_rate_ratings("QuickDraft"),
+        reprint_ratings={"oracle_id:support-id": _reprint()},
+    )
+
+    payload = json.loads(json.dumps(result.profile.to_json()))
+    restored = SetProfile.from_json(payload)
+    card = next(item for item in restored.card_ratings if item.card_key == "oracle_id:support-id")
+    evidence = card.gih_win_rate.aggregate_evidence
+
+    assert evidence is not None
+    assert evidence.fallback_reason is None
+    assert evidence.source_format == "quickdraft"
+    assert evidence.source_format == restored.event_format
+    with pytest.raises(SetProfileSchemaError):
+        AggregateEvidence(source_format="QuickDraft", fallback_reason="reprint-evidence", confidence=0.5)
 
 
 def test_reprint_rating_never_replaces_this_sets_own_rate() -> None:

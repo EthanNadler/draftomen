@@ -30,9 +30,10 @@
   fills such a card from the published profile with the most games for the
   same card, preferring the same format. The borrowed rate counts for half: it
   sits halfway between that rating and the card prior, with half the
-  confidence, and is marked `reprint-evidence`. It is graded but does not
-  shift the set's grade scale, and the set's own rate replaces it as soon as
-  17Lands publishes one. (#1082)
+  confidence. Its rate source names the set and format it came from, so
+  profiles stay readable by released versions of the app. It is graded but
+  does not shift the set's grade scale, and the set's own rate replaces it as
+  soon as 17Lands publishes one. (#1082)
 
 ## [0.6.7] - 2026-11-20
 

@@ -69,7 +69,8 @@ from draftomen.set_profile import (
     SET_PROFILE_SCHEMA_VERSION,
     SourceMetadata,
     TriadProfile,
-    REPRINT_EVIDENCE_REASON,
+    REPRINT_RATE_SOURCE_PREFIX,
+    is_reprint_rate,
     profile_card_key,
 )
 
@@ -626,9 +627,7 @@ def reprint_card_ratings(
         for card_rating in profile.card_ratings:
             rate = card_rating.gih_win_rate
             evidence = rate.aggregate_evidence
-            if rate.samples <= 0 or (
-                evidence is not None and evidence.fallback_reason == REPRINT_EVIDENCE_REASON
-            ):
+            if rate.samples <= 0 or is_reprint_rate(rate):
                 continue
             current = best.get(card_rating.card_key)
             if current is not None and current.gih_win_rate.samples >= rate.samples:
@@ -1556,6 +1555,7 @@ def _card_ratings(
                     card_key=key,
                     gih_win_rate=_reprint_estimate(
                         reprint=reprint,
+                        requested_format=requested_format,
                         prior=config.card_prior,
                         config=config,
                     ),
@@ -1635,6 +1635,7 @@ def _card_ratings(
 def _reprint_estimate(
     *,
     reprint: ReprintCardRating,
+    requested_format: str,
     prior: BetaPrior,
     config: ProfileGenerationConfig,
 ) -> RateEstimate:
@@ -1644,10 +1645,10 @@ def _reprint_estimate(
         value=prior.mean + REPRINT_EVIDENCE_WEIGHT * (rate.value - prior.mean),
         samples=rate.samples,
         prior_value=prior.mean,
-        source=f"{_CARD_RATE_SOURCE}:reprint:{reprint.set_code}",
+        source=f"{REPRINT_RATE_SOURCE_PREFIX}{reprint.set_code}:{reprint.event_format}",
         aggregate_evidence=AggregateEvidence(
-            source_format=reprint.event_format,
-            fallback_reason=REPRINT_EVIDENCE_REASON,
+            source_format=requested_format,
+            fallback_reason=None,
             confidence=REPRINT_EVIDENCE_WEIGHT * min(
                 1.0,
                 rate.samples / config.confidence_sample_scale,
